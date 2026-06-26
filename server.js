@@ -1,55 +1,55 @@
-const express = require('express');
 const axios = require('axios');
-const cors = require('cors');
 
-const app = express();
-app.use(express.json());
+export default async function handler(req, res) {
+  // إعدادات CORS للسماح لمتصفح Pi بالاتصال بالسيرفر دون حظر
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'POST, GET, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
 
-// تفعيل CORS للسماح لموقعك على Vercel بالاتصال بهذا السيرفر
-app.use(cors({
-    origin: '*' 
-}));
+  if (req.method === 'OPTIONS') return res.status(200).end();
+  if (req.method !== 'POST') return res.status(405).json({ error: 'Method Not Allowed' });
 
-// جلب مفتاح الـ API من متغيرات البيئة السرية على منصة Render
-const PI_API_KEY = process.env.PI_API_KEY; 
-const PI_API_URL = "https://minepi.com";
+  // قراءة مفتاح الـ API لشبكة الفحص التجريبية من إعدادات Vercel
+  const PI_API_KEY = process.env.PI_API_KEY;
+  const PI_API_URL = "https://minepi.com";
 
-// 1. دالة الموافقة على الدفع (Approve)
-app.post('/approve-payment', async (req, res) => {
-    const { paymentId } = req.body;
-    if (!paymentId) return res.status(400).json({ success: false, error: "Missing paymentId" });
+  // فحص المسار المطلوب بناءً على طلب الواجهة الأمامية
+  const { action, paymentId, txid } = req.body;
 
-    try {
-        const response = await axios.post(`${PI_API_URL}/payments/${paymentId}/approve`, {}, {
-            headers: { 'Authorization': `Key ${PI_API_KEY}` }
-        });
-        console.log("تمت الموافقة التجريبية بنجاح:", paymentId);
-        res.json({ success: true, data: response.data });
-    } catch (error) {
-        console.error("خطأ في Approve:", error.response ? error.response.data : error.message);
-        res.status(500).json({ success: false, error: "فشلت عملية الموافقة" });
+  if (!paymentId) {
+    return res.status(400).json({ error: "Missing paymentId" });
+  }
+
+  try {
+    // 1️⃣ أولاً: مسار الموافقة (Approve)
+    if (action === 'approve') {
+      console.log("جاري إرسال أمر الموافقة التجريبية للمعرف:", paymentId);
+      
+      const response = await axios.post(`${PI_API_URL}/payments/${paymentId}/approve`, {}, {
+        headers: { 'Authorization': `Key ${PI_API_KEY}` }
+      });
+
+      console.log("تمت الموافقة التجريبية بنجاح.");
+      return res.status(200).json(response.data); // إرجاع البيانات مباشرة بدون تغليف
     }
-});
 
-// 2. دالة إكمال الدفع (Complete)
-app.post('/complete-payment', async (req, res) => {
-    const { paymentId, txid } = req.body;
-    if (!paymentId || !txid) return res.status(400).json({ success: false, error: "Missing data" });
+    // 2️⃣ ثانياً: مسار إكمال الدفع (Complete)
+    if (action === 'complete') {
+      if (!txid) return res.status(400).json({ error: "Missing txid" });
+      console.log("جاري توثيق إكمال الدفع لمعرف الحركة:", txid);
 
-    try {
-        const response = await axios.post(`${PI_API_URL}/payments/${paymentId}/complete`, { txid }, {
-            headers: { 'Authorization': `Key ${PI_API_KEY}` }
-        });
-        console.log("اكتملت المعاملة التجريبية بنجاح:", txid);
-        res.json({ success: true, data: response.data });
-    } catch (error) {
-        console.error("خطأ في Complete:", error.response ? error.response.data : error.message);
-        res.status(500).json({ success: false, error: "فشل إكمال المعاملة" });
+      const response = await axios.post(`${PI_API_URL}/payments/${paymentId}/complete`, { txid }, {
+        headers: { 'Authorization': `Key ${PI_API_KEY}` }
+      });
+
+      console.log("تمت عملية إكمال الدفع وتوثيقها بنجاح.");
+      return res.status(200).json(response.data);
     }
-});
 
-// تشغيل السيرفر على المنفذ المحدد تلقائياً
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-    console.log(`سيرفر Pi التجريبي يعمل الآن على المنفذ ${PORT}`);
-});
+    return res.status(400).json({ error: "Invalid action" });
+
+  } catch (error) {
+    console.error("خطأ في السيرفر:", error.response ? error.response.data : error.message);
+    return res.status(500).json({ error: error.message });
+  }
+}
